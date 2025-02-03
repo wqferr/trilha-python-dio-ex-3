@@ -1,17 +1,29 @@
 from typing import Optional
 from datetime import date
 from abc import ABC, abstractmethod
+from collections import defaultdict
 
-menu = """
+menu_inicial = """
 
+[u] Criar usuário
+[l] Fazer login
+[q] Sair
+
+"""
+
+menu_cliente = """
+
+[c] Criar conta
 [d] Depositar
 [s] Sacar
 [e] Extrato
-[u] Criar usuário
-[c] Criar conta
-[q] Sair
+[x] Fazer logout
 
 => """
+
+msg_operacao_invalida = (
+    "Operação inválida, por favor selecione novamente a operação desejada."
+)
 
 
 class Historico:
@@ -27,13 +39,22 @@ class Historico:
 
 
 class Cliente:
+    lista_clientes: list["Cliente"] = []
+
     def __init__(self, *, endereco: str):
         self._endereco = endereco
         self._contas: list["Conta"] = []
+        Cliente.lista_clientes.append(self)
 
     def _checa_conta_pertence_a_si(self, conta: "Conta") -> None:
         if conta.cliente() is not self:
             raise ValueError("Cliente da conta não bate com o objeto cliente.")
+
+    def busca_conta(self, agencia: str, numero: str) -> Optional["Conta"]:
+        for conta in self._contas:
+            if conta.agencia() == agencia and conta.numero() == numero:
+                return conta
+        return None
 
     def realizar_transacao(self, conta: "Conta", transacao: "Transacao") -> None:
         self._checa_conta_pertence_a_si(conta)
@@ -55,24 +76,54 @@ class PessoaFisica(Cliente):
         endereco: str,
     ):
         super().__init__(endereco=endereco)
+        if not PessoaFisica.valida_cpf(cpf):
+            raise ValueError("CPF inválido.")
+        elif PessoaFisica.busca_por_cpf(cpf):
+            raise ValueError("CPF já existe.")
+
         self._nome = nome
         self._cpf = cpf
         self._data_nascimento = data_nascimento
 
+    def cpf(self) -> str:
+        return self._cpf
+
+    @classmethod
+    def valida_cpf(cls, cpf: str):
+        if len(cpf) != 11:
+            return False
+        else:
+            return cpf.isnumeric()
+
+    @classmethod
+    def busca_por_cpf(cls, cpf: str) -> Optional[Cliente]:
+        for cliente in cls.lista_clientes:
+            if isinstance(cliente, PessoaFisica) and cliente.cpf() == cpf:
+                return cliente
+        return None
+
 
 class Conta:
+    contas_por_agencia: dict[str, list["Conta"]] = defaultdict(list)
+
     def __init__(
         self,
         agencia: str,
-        numero: str,
         cliente: Cliente,
     ):
+        Conta.contas_por_agencia[agencia].append(self)
         self._agencia = agencia
-        self._numero = numero
+        self._numero = len(Conta.contas_por_agencia) + 1
         self._cliente = cliente
         self._saldo = 0
         self._historico = Historico()
         cliente.adicionar_conta(self)
+
+    def agencia(self) -> str:
+        return self._agencia
+
+    def numero(self) -> str:
+        return self._numero
 
     def cliente(self) -> Cliente:
         return self._cliente
@@ -82,6 +133,13 @@ class Conta:
 
     def historico(self) -> Historico:
         return self._historico
+
+    @classmethod
+    def busca_agencia_numero(cls, agencia: str, numero: str) -> Optional["Conta"]:
+        for conta in Conta.contas_por_agencia[agencia]:
+            if conta._numero == numero:
+                return conta
+        return None
 
     # Me recuso a fazer isso, mas deixei aqui comentado só pra mostrar que sei fazer
     # @classmethod
@@ -101,7 +159,15 @@ class Conta:
 
 
 class ContaCorrente(Conta):
-    def __init__(self, *, limite: float, limite_saques: int):
+    def __init__(
+        self,
+        agencia: str,
+        cliente: Cliente,
+        *,
+        limite: float,
+        limite_saques: int,
+    ):
+        super().__init__(agencia, cliente)
         self._limite = limite
         self._limite_saques = limite_saques
         self._saques_realizados = 0
@@ -112,6 +178,7 @@ class ContaCorrente(Conta):
         elif valor > self._limite:
             return False
         else:
+            self._saques_realizados += 1
             return super().sacar(valor)
 
 
@@ -151,57 +218,9 @@ class Saque(Transacao):
         return f"Saque: R$ {self._valor:.2f}"
 
 
-saldo = 0
 LIMITE_PADRAO = 500
-extrato = ""
-numero_saques = 0
 LIMITE_SAQUES = 3
 AGENCIA = "0001"
-
-
-def valida_cpf(cpf: str):
-    if len(cpf) != 11:
-        return False
-    else:
-        return cpf.isnumeric()
-
-
-def encontra_usuario(lista_usuarios: list[dict], *, cpf: str):
-    for usuario in lista_usuarios:
-        if usuario["cpf"] == cpf:
-            return usuario
-    return None
-
-
-def novo_usuario(
-    lista_usuarios: list[dict],
-    *,
-    nome: str,
-    cpf: str,
-    endereco: str,
-) -> Optional[dict]:
-    if not valida_cpf(cpf):
-        print("CPF inválido.")
-        return None
-
-    usuario_com_cpf = encontra_usuario(lista_usuarios, cpf=cpf)
-    if usuario_com_cpf is None:
-        usuario = dict(nome=nome, cpf=cpf, endereco=endereco)
-        lista_usuarios.append(usuario)
-        return usuario
-    else:
-        print(f"Usuário com CPF duplicado: {cpf}.")
-        return None
-
-
-def nova_conta(lista_contas: list[dict], *, usuario: dict) -> Optional[dict]:
-    if usuario is None:
-        print("Uma conta precisa de um usuário vinculado.")
-        return None
-    else:
-        conta = dict(agencia=AGENCIA, numero=len(lista_contas) + 1, usuario=usuario)
-        lista_contas.append(conta)
-        return conta
 
 
 def saque(
@@ -225,7 +244,6 @@ def saque(
         saldo -= valor
         extrato += f"Saque: R$ {valor:.2f}\n"
         numero_saques += 1
-
     return dict(saldo=saldo, extrato=extrato, numero_saques=numero_saques)
 
 
@@ -239,59 +257,75 @@ def deposito(saldo, valor, extrato, /) -> dict:
     return dict(saldo=saldo, extrato=extrato)
 
 
-def exibe_extrato(saldo, /, *, extrato) -> None:
-    if extrato:
-        print(extrato)
+def le_conta_cliente(cliente: Cliente) -> Optional[Conta]:
+    agencia = input("Agência: ")
+    numero_conta = input("Número da conta: ")
+    conta = cliente.busca_conta(agencia, numero_conta)
+    if conta:
+        return conta
     else:
-        print("Extrato vazio.")
-    print(f"\nSaldo: R$ {saldo:.2f}")
+        print("Conta não encontrada para este cliente.")
+        return None
 
 
 contas = []
 usuarios = []
 
 while True:
-    opcao = input(menu)
+    opcao_inicial = input(menu_inicial)
 
-    if opcao == "d":
-        valor = float(input("Valor do depósito: "))
-        resultado = deposito(saldo, valor, extrato)
-        saldo = resultado["saldo"]
-        extrato = resultado["extrato"]
+    if opcao_inicial == "q":
+        break
 
-    elif opcao == "s":
-        valor = float(input("Valor do saque: "))
-        resultado = saque(
-            saldo=saldo,
-            valor=valor,
-            extrato=extrato,
-            limite=LIMITE_PADRAO,
-            numero_saques=numero_saques,
-        )
-        saldo = resultado["saldo"]
-        extrato = resultado["extrato"]
-        numero_saques = resultado["numero_saques"]
-
-    elif opcao == "e":
-        exibe_extrato(saldo, extrato=extrato)
-
-    elif opcao == "u":
+    elif opcao_inicial == "u":
         nome = input("Nome: ")
         cpf = input("CPF: ")
         endereco = input("Endereço: ")
-        novo_usuario(usuarios, nome=nome, cpf=cpf, endereco=endereco)
+        PessoaFisica(nome=nome, cpf=cpf, endereco=endereco)
 
-    elif opcao == "c":
-        cpf = input("CPF do usuário: ")
-        usuario = encontra_usuario(usuarios, cpf=cpf)
-        if usuario is None:
-            print("Usuário não encontrado.")
-        else:
-            conta = nova_conta(contas, usuario=usuario)
-            print(f"Conta número {conta['numero']} criada.")
+    elif opcao_inicial == "l":
+        cpf = input("CPF do cliente: ")
+        cliente = PessoaFisica.busca_por_cpf(cpf)
+        if not cliente:
+            print("Cliente não encontrado.")
+            continue
 
-    elif opcao == "q":
-        break
+        while True:
+            opcao_cliente = input(menu_cliente)
+
+            if opcao_cliente == "x":
+                break
+
+            elif opcao_cliente == "c":
+                agencia = input("Agência: ")
+                Conta(agencia, cliente)
+
+            elif opcao_cliente == "d":
+                conta = le_conta_cliente(cliente)
+                if not conta:
+                    continue
+
+                valor = float(input("Valor do depósito: "))
+                cliente.realizar_transacao(conta, Deposito(valor))
+
+            elif opcao_cliente == "s":
+                conta = le_conta_cliente(cliente)
+                if not conta:
+                    continue
+
+                valor = float(input("Valor do saque: "))
+                cliente.realizar_transacao(conta, Saque(valor))
+
+            elif opcao_cliente == "e":
+                conta = le_conta_cliente(cliente)
+                if not conta:
+                    continue
+
+                historico = conta.historico()
+                print(historico.resumo())
+
+            else:
+                print(msg_operacao_invalida)
 
     else:
-        print("Operação inválida, por favor selecione novamente a operação desejada.")
+        print(msg_operacao_invalida)
