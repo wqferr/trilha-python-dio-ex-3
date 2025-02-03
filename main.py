@@ -50,7 +50,7 @@ class Cliente:
         if conta.cliente() is not self:
             raise ValueError("Cliente da conta não bate com o objeto cliente.")
 
-    def busca_conta(self, agencia: str, numero: str) -> Optional["Conta"]:
+    def busca_conta(self, agencia: str, numero: int) -> Optional["Conta"]:
         for conta in self._contas:
             if conta.agencia() == agencia and conta.numero() == numero:
                 return conta
@@ -76,14 +76,16 @@ class PessoaFisica(Cliente):
         endereco: str,
     ):
         super().__init__(endereco=endereco)
-        if not PessoaFisica.valida_cpf(cpf):
-            raise ValueError("CPF inválido.")
-        elif PessoaFisica.busca_por_cpf(cpf):
-            raise ValueError("CPF já existe.")
-
         self._nome = nome
         self._cpf = cpf
         self._data_nascimento = data_nascimento
+
+        if not PessoaFisica.valida_cpf(cpf):
+            raise ValueError("CPF inválido.")
+        else:
+            cliente_existente = PessoaFisica.busca_por_cpf(cpf)
+            if cliente_existente is not None and cliente_existente is not self:
+                raise ValueError("CPF já existe.")
 
     def cpf(self) -> str:
         return self._cpf
@@ -113,7 +115,7 @@ class Conta:
     ):
         Conta.contas_por_agencia[agencia].append(self)
         self._agencia = agencia
-        self._numero = len(Conta.contas_por_agencia) + 1
+        self._numero = len(Conta.contas_por_agencia[agencia])
         self._cliente = cliente
         self._saldo = 0
         self._historico = Historico()
@@ -122,7 +124,7 @@ class Conta:
     def agencia(self) -> str:
         return self._agencia
 
-    def numero(self) -> str:
+    def numero(self) -> int:
         return self._numero
 
     def cliente(self) -> Cliente:
@@ -135,7 +137,7 @@ class Conta:
         return self._historico
 
     @classmethod
-    def busca_agencia_numero(cls, agencia: str, numero: str) -> Optional["Conta"]:
+    def busca_agencia_numero(cls, agencia: str, numero: int) -> Optional["Conta"]:
         for conta in Conta.contas_por_agencia[agencia]:
             if conta._numero == numero:
                 return conta
@@ -143,8 +145,8 @@ class Conta:
 
     # Me recuso a fazer isso, mas deixei aqui comentado só pra mostrar que sei fazer
     # @classmethod
-    # def nova_conta(cls, agencia: str, numero: str, cliente: Cliente) -> "Conta":
-    #     return cls(agencia, numero, cliente)
+    # def nova_conta(cls, agencia: str, cliente: Cliente) -> "Conta":
+    #     return cls(agencia, cliente)
 
     def sacar(self, valor: float) -> bool:
         if self._saldo >= valor:
@@ -220,7 +222,6 @@ class Saque(Transacao):
 
 LIMITE_PADRAO = 500
 LIMITE_SAQUES = 3
-AGENCIA = "0001"
 
 
 def saque(
@@ -259,7 +260,12 @@ def deposito(saldo, valor, extrato, /) -> dict:
 
 def le_conta_cliente(cliente: Cliente) -> Optional[Conta]:
     agencia = input("Agência: ")
-    numero_conta = input("Número da conta: ")
+    try:
+        numero_conta = int(input("Número da conta: "))
+    except ValueError:
+        print("Número de conta inválido.")
+        return None
+
     conta = cliente.busca_conta(agencia, numero_conta)
     if conta:
         return conta
@@ -281,7 +287,18 @@ while True:
         nome = input("Nome: ")
         cpf = input("CPF: ")
         endereco = input("Endereço: ")
-        PessoaFisica(nome=nome, cpf=cpf, endereco=endereco)
+        data_nasc_raw = input("Data de nascimento: ")
+        try:
+            dia, mes, ano = map(int, data_nasc_raw.split("/"))
+        except ValueError:
+            print("Data inválida.")
+        data_nascimento = date(year=ano, month=mes, day=dia)
+        try:
+            PessoaFisica(
+                nome=nome, cpf=cpf, endereco=endereco, data_nascimento=data_nascimento
+            )
+        except ValueError as e:
+            print(str(e))
 
     elif opcao_inicial == "l":
         cpf = input("CPF do cliente: ")
@@ -298,7 +315,12 @@ while True:
 
             elif opcao_cliente == "c":
                 agencia = input("Agência: ")
-                Conta(agencia, cliente)
+                nova_conta = ContaCorrente(
+                    agencia, cliente, limite=LIMITE_PADRAO, limite_saques=LIMITE_SAQUES
+                )
+                print(
+                    f"Nova conta criada: agência {agencia} número {nova_conta.numero()}."
+                )
 
             elif opcao_cliente == "d":
                 conta = le_conta_cliente(cliente)
@@ -321,8 +343,7 @@ while True:
                 if not conta:
                     continue
 
-                historico = conta.historico()
-                print(historico.resumo())
+                print(conta.historico().resumo())
 
             else:
                 print(msg_operacao_invalida)
