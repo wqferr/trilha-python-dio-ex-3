@@ -224,40 +224,6 @@ LIMITE_PADRAO = 500
 LIMITE_SAQUES = 3
 
 
-def saque(
-    *,
-    saldo,
-    valor,
-    extrato,
-    limite,
-    numero_saques,
-    limite_saques,
-) -> dict:
-    if numero_saques >= limite_saques:
-        print("Operação excederia limite de saques diários.")
-    elif valor <= 0:
-        print("Valor inválido: saque só suporta quantias positivas.")
-    elif valor > limite:
-        print("Operação excederia limite por saque.")
-    elif valor > saldo:
-        print("Saldo insuficiente.")
-    else:
-        saldo -= valor
-        extrato += f"Saque: R$ {valor:.2f}\n"
-        numero_saques += 1
-    return dict(saldo=saldo, extrato=extrato, numero_saques=numero_saques)
-
-
-def deposito(saldo, valor, extrato, /) -> dict:
-    if valor <= 0:
-        print("Valor inválido: depósito só suporta quantias positivas.")
-    else:
-        saldo += valor
-        extrato += f"Depósito: R$ {valor:.2f}\n"
-
-    return dict(saldo=saldo, extrato=extrato)
-
-
 def le_conta_cliente(cliente: Cliente) -> Optional[Conta]:
     agencia = input("Agência: ")
     try:
